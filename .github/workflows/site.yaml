@@ -1,0 +1,59 @@
+name: Deploy Site
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Vercel
+    runs-on: macos-latest
+
+    steps:
+        - uses: actions/checkout@v4
+
+        - uses: pnpm/action-setup@v4
+          with:
+              version: 10.2.0
+
+        - uses: actions/setup-node@v4
+          with:
+              node-version: 22.x
+              cache: pnpm
+
+        - name: 📦 Install dependencies
+          run: pnpm install --no-frozen-lockfile
+          shell: bash
+
+        - name: 🚀 Deploy to Vercel
+          env:
+            NEXT_PUBLIC_APP_NAME: ${{ vars.NEXT_PUBLIC_APP_NAME }}
+            NEXT_PUBLIC_APP_DOMAIN: ${{ vars.NEXT_PUBLIC_APP_DOMAIN }}
+            NEXT_PUBLIC_APP_SHORT_DOMAIN: ${{ vars.NEXT_PUBLIC_APP_SHORT_DOMAIN }}
+
+            TINYBIRD_API_KEY: ${{ secrets.TINYBIRD_API_KEY }}
+            TINYBIRD_API_URL: ${{ vars.TINYBIRD_API_URL }}
+
+            PROJECT_ID_VERCEL: ${{ vars.PROJECT_ID_VERCEL }}
+            TEAM_ID_VERCEL: ${{ vars.TEAM_ID_VERCEL }}
+            AUTH_BEARER_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+            UPSTASH_REDIS_REST_URL: ${{ vars.UPSTASH_REDIS_REST_URL }}
+            UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+
+            QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+            QSTASH_CURRENT_SIGNING_KEY: ${{ secrets.QSTASH_CURRENT_SIGNING_KEY }}
+            QSTASH_NEXT_SIGNING_KEY: ${{ secrets.QSTASH_NEXT_SIGNING_KEY }}
+
+            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+            SMTP_HOST: ${{ vars.SMTP_HOST }}
+            SMTP_PORT: ${{ vars.SMTP_PORT }}
+            SMTP_USER: ${{ vars.SMTP_USER }}
+            SMTP_PASSWORD: ${{ secrets.RESEND_API_KEY }}
+          run: |
+              environment=$([[ "${{ github.ref }}" == 'refs/heads/main' ]] && echo "production" || echo "preview")
+              pnpm dlx vercel pull --yes --environment=$environment --token=${{ secrets.VERCEL_TOKEN }}
+
+              pnpm dlx vercel build --token=${{ secrets.VERCEL_TOKEN }}
+              pnpm dlx vercel deploy --prebuilt --archive=tgz --token=${{ secrets.VERCEL_TOKEN }}
