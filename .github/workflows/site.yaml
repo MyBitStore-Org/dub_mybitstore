@@ -32,6 +32,7 @@ jobs:
             NEXT_PUBLIC_APP_DOMAIN: ${{ vars.NEXT_PUBLIC_APP_DOMAIN }}
             NEXT_PUBLIC_APP_SHORT_DOMAIN: ${{ vars.NEXT_PUBLIC_APP_SHORT_DOMAIN }}
 
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
             TINYBIRD_API_KEY: ${{ secrets.TINYBIRD_API_KEY }}
             TINYBIRD_API_URL: ${{ vars.TINYBIRD_API_URL }}
 
