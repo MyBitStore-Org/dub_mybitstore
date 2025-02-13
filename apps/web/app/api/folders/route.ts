@@ -2,6 +2,7 @@ import { DubApiError, exceededLimitError } from "@/lib/api/errors";
 import { createId, parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
 import { getFolders } from "@/lib/folder/get-folders";
+import { getPlanCapabilities } from "@/lib/plan-capabilities";
 import {
   createFolderSchema,
   FolderSchema,
@@ -28,6 +29,14 @@ export const GET = withWorkspace(
   },
   {
     requiredPermissions: ["folders.read"],
+    requiredPlan: [
+      "pro",
+      "business",
+      "business plus",
+      "business extra",
+      "business max",
+      "enterprise",
+    ],
     featureFlag: "linkFolders",
   },
 );
@@ -55,6 +64,16 @@ export const POST = withWorkspace(
     const { name, accessLevel } = createFolderSchema.parse(
       await parseRequestBody(req),
     );
+
+    const { canManageFolderPermissions } = getPlanCapabilities(workspace.plan);
+
+    if (!canManageFolderPermissions && accessLevel !== "write") {
+      throw new DubApiError({
+        code: "forbidden",
+        message:
+          "You can only change the access level of a folder on Business and above plans.",
+      });
+    }
 
     try {
       const newFolder = await prisma.folder.create({
@@ -89,6 +108,14 @@ export const POST = withWorkspace(
   },
   {
     requiredPermissions: ["folders.write"],
+    requiredPlan: [
+      "pro",
+      "business",
+      "business plus",
+      "business extra",
+      "business max",
+      "enterprise",
+    ],
     featureFlag: "linkFolders",
   },
 );

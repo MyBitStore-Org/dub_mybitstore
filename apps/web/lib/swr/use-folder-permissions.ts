@@ -1,13 +1,14 @@
+import { getPlanCapabilities } from "@/lib/plan-capabilities";
 import { FolderPermission, FolderWithPermissions } from "@/lib/types";
 import { fetcher } from "@dub/utils";
 import useSWR from "swr";
 import useWorkspace from "./use-workspace";
 
 export function useFolderPermissions() {
-  const { id, flags } = useWorkspace();
+  const { id, plan, flags } = useWorkspace();
 
   const { data, error, isLoading, mutate } = useSWR<FolderWithPermissions[]>(
-    id && flags?.linkFolders
+    id && flags?.linkFolders && plan !== "free" && plan !== "pro"
       ? `/api/folders/permissions?workspaceId=${id}`
       : null,
     fetcher,
@@ -28,11 +29,13 @@ export function useCheckFolderPermission(
   folderId: string | null,
   action: FolderPermission,
 ) {
-  const { folders, isLoading } = useFolderPermissions();
+  const { plan } = useWorkspace();
+  const { folders } = useFolderPermissions();
+  const { canManageFolderPermissions } = getPlanCapabilities(plan);
 
-  // if (isLoading) {
-  //   return false;
-  // }
+  if (!canManageFolderPermissions) {
+    return true;
+  }
 
   if (!folderId) {
     return true;
