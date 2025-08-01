@@ -1,4 +1,5 @@
 import { prisma } from "@dub/prisma";
+import { OG_AVATAR_URL } from "@dub/utils";
 import { DubApiError } from "../errors";
 import { CustomerWithLink } from "./transform-customer";
 
@@ -54,7 +55,7 @@ export const getCustomerOrThrow = async (
   }
 
   if (!customer.avatar) {
-    customer.avatar = `https://api.dicebear.com/9.x/notionists/png?seed=${customer.id}`;
+    customer.avatar = `${OG_AVATAR_URL}${customer.id}`;
   }
 
   return customer;

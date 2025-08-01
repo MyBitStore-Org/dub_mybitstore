@@ -4,6 +4,7 @@ import { parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
 import { getFolders } from "@/lib/folder/get-folders";
 import { webhookCache } from "@/lib/webhook/cache";
+import { PARTNERS_WEBHOOK_TRIGGERS } from "@/lib/webhook/constants";
 import { transformWebhook } from "@/lib/webhook/transform";
 import { toggleWebhooksForWorkspace } from "@/lib/webhook/update-webhook";
 import { isLinkLevelWebhook } from "@/lib/webhook/utils";
@@ -43,6 +44,7 @@ export const GET = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
   },
@@ -123,6 +125,21 @@ export const PATCH = withWorkspace(
       }
     }
 
+    if (triggers) {
+      const hasPartnersTriggers = PARTNERS_WEBHOOK_TRIGGERS.some((trigger) =>
+        triggers.includes(trigger),
+      );
+
+      if (hasPartnersTriggers && !workspace.partnersEnabled) {
+        throw new DubApiError({
+          code: "bad_request",
+          message:
+            "Dub Partners is not enabled on this workspace, which is required to use the following webhook triggers: " +
+            PARTNERS_WEBHOOK_TRIGGERS.join(", "),
+        });
+      }
+    }
+
     const oldLinks = await prisma.linkWebhook.findMany({
       where: {
         webhookId,
@@ -149,8 +166,6 @@ export const PATCH = withWorkspace(
             })),
           },
         }),
-        disabledAt: null,
-        consecutiveFailures: 0,
       },
       select: {
         id: true,
@@ -244,6 +259,7 @@ export const PATCH = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
   },
@@ -254,23 +270,12 @@ export const DELETE = withWorkspace(
   async ({ workspace, params }) => {
     const { webhookId } = params;
 
-    const webhook = await prisma.webhook.findUniqueOrThrow({
+    await prisma.webhook.findUniqueOrThrow({
       where: {
         id: webhookId,
         projectId: workspace.id,
       },
-      select: {
-        installationId: true,
-      },
     });
-
-    if (webhook.installationId) {
-      throw new DubApiError({
-        code: "bad_request",
-        message:
-          "This webhook is managed by an integration, hence cannot be deleted manually.",
-      });
-    }
 
     const linkWebhooks = await prisma.linkWebhook.findMany({
       where: {
@@ -323,6 +328,7 @@ export const DELETE = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
   },

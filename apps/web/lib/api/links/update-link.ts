@@ -1,4 +1,5 @@
-import { isStored, storage } from "@/lib/storage";
+import { getPartnerAndDiscount } from "@/lib/planetscale/get-partner-discount";
+import { isNotHostedImage, storage } from "@/lib/storage";
 import { recordLink } from "@/lib/tinybird";
 import { LinkProps, ProcessedLinkProps } from "@/lib/types";
 import { propagateWebhookTriggerChanges } from "@/lib/webhook/update-webhook";
@@ -12,9 +13,11 @@ import {
   truncate,
 } from "@dub/utils";
 import { waitUntil } from "@vercel/functions";
+import { createId } from "../create-id";
 import { combineTagIds } from "../tags/combine-tag-ids";
-import { createId } from "../utils";
+import { scheduleABTestCompletion } from "./ab-test-scheduler";
 import { linkCache } from "./cache";
+import { encodeKeyIfCaseSensitive } from "./case-sensitivity";
 import { includeTags } from "./include-tags";
 import { transformLink } from "./utils";
 
@@ -22,7 +25,12 @@ export async function updateLink({
   oldLink,
   updatedLink,
 }: {
-  oldLink: { domain: string; key: string; image?: string | null };
+  oldLink: {
+    domain: string;
+    key: string;
+    image?: string | null;
+    testCompletedAt?: Date | null;
+  };
   updatedLink: ProcessedLinkProps &
     Pick<LinkProps, "id" | "clicks" | "lastClicked" | "updatedAt">;
 }) {
@@ -55,12 +63,21 @@ export async function updateLink({
     tagIds,
     tagNames,
     webhookIds,
+    testVariants,
+    testStartedAt,
+    testCompletedAt,
     ...rest
   } = updatedLink;
+  const changedTestCompletedAt = testCompletedAt !== oldLink.testCompletedAt;
 
   const combinedTagIds = combineTagIds({ tagId, tagIds });
 
   const imageUrlNonce = nanoid(7);
+
+  key = encodeKeyIfCaseSensitive({
+    domain: updatedLink.domain,
+    key: updatedLink.key,
+  });
 
   const response = await prisma.link.update({
     where: {
@@ -71,12 +88,12 @@ export async function updateLink({
       key,
       shortLink: linkConstructorSimple({
         domain: updatedLink.domain,
-        key: updatedLink.key,
+        key,
       }),
       title: truncate(title, 120),
       description: truncate(description, 240),
       image:
-        proxy && image && !isStored(image)
+        proxy && image && isNotHostedImage(image)
           ? `${R2_URL}/images/${id}_${imageUrlNonce}`
           : image,
       utm_source: utm_source || null,
@@ -86,6 +103,10 @@ export async function updateLink({
       utm_content: utm_content || null,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       geo: geo || Prisma.JsonNull,
+
+      testVariants: testVariants || Prisma.JsonNull,
+      testCompletedAt: testCompletedAt ? new Date(testCompletedAt) : null,
+      testStartedAt: testStartedAt ? new Date(testStartedAt) : null,
 
       // Associate tags by tagNames
       ...(tagNames &&
@@ -149,7 +170,14 @@ export async function updateLink({
   waitUntil(
     Promise.allSettled([
       // record link in Redis
-      linkCache.set(response),
+      linkCache.set({
+        ...response,
+        ...(response.programId &&
+          (await getPartnerAndDiscount({
+            programId: response.programId,
+            partnerId: response.partnerId,
+          }))),
+      }),
 
       // record link in Tinybird
       recordLink(response),
@@ -160,7 +188,7 @@ export async function updateLink({
       // if proxy is true and image is not stored in R2, upload image to R2
       proxy &&
         image &&
-        !isStored(image) &&
+        isNotHostedImage(image) &&
         storage.upload(`images/${id}_${imageUrlNonce}`, image, {
           width: 1200,
           height: 630,
@@ -175,6 +203,11 @@ export async function updateLink({
         propagateWebhookTriggerChanges({
           webhookIds,
         }),
+
+      changedTestCompletedAt &&
+        testVariants &&
+        testCompletedAt &&
+        scheduleABTestCompletion(response),
     ]),
   );
 

@@ -1,15 +1,11 @@
 enum PayoutStatus {
   pending
   processing
+  processed
+  sent
   completed
   failed
-}
-
-enum PayoutType {
-  clicks
-  leads
-  sales
-  custom
+  canceled
 }
 
 model Payout {
@@ -17,26 +13,30 @@ model Payout {
   programId        String
   partnerId        String
   invoiceId        String?
+  userId           String? // user who made the payout
   amount           Int          @default(0)
   currency         String       @default("USD")
   status           PayoutStatus @default(pending)
-  type             PayoutType   @default(sales)
   description      String?
   periodStart      DateTime?
   periodEnd        DateTime?
-  quantity         Int? // Number of clicks/leads/sales in this payout
-  stripeTransferId String?      @unique
+  paypalTransferId String?      @unique
+  stripeTransferId String?
+  stripePayoutId   String?
+  failureReason    String?      @db.Text
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   paidAt           DateTime?
 
-  program Program  @relation(fields: [programId], references: [id])
-  partner Partner  @relation(fields: [partnerId], references: [id])
-  invoice Invoice? @relation(fields: [invoiceId], references: [id])
-  sales        Sale[]
-  commissions  Commission[]
+  program     Program      @relation(fields: [programId], references: [id])
+  partner     Partner      @relation(fields: [partnerId], references: [id])
+  invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
+  user        User?        @relation(fields: [userId], references: [id])
+  commissions Commission[]
 
-  @@index([programId])
-  @@index([partnerId])
-  @@index([invoiceId])
+  @@index(programId)
+  @@index(partnerId)
+  @@index(invoiceId)
+  @@index(status)
+  @@index(userId)
 }

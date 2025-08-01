@@ -3,19 +3,19 @@
 import useWorkspace from "@/lib/swr/use-workspace";
 import { LinkProps } from "@/lib/types";
 import { DOMAINS_MAX_PAGE_SIZE } from "@/lib/zod/schemas/domains";
-import { Lock, Random } from "@/ui/shared/icons";
 import {
   AnimatedSizeContainer,
+  ArrowTurnRight2,
   ButtonTooltip,
   Combobox,
   LinkedIn,
   LoadingCircle,
   Magic,
+  PenWriting,
   Tooltip,
   Twitter,
   useKeyboardShortcut,
 } from "@dub/ui";
-import { ArrowTurnRight2 } from "@dub/ui/icons";
 import {
   cn,
   DUB_DOMAINS,
@@ -28,6 +28,7 @@ import {
 } from "@dub/utils";
 import { useCompletion } from "ai/react";
 import { TriangleAlert } from "lucide-react";
+import { useParams, usePathname } from "next/navigation";
 import posthog from "posthog-js";
 import {
   forwardRef,
@@ -41,7 +42,7 @@ import {
 import { toast } from "sonner";
 import { useDebounce } from "use-debounce";
 import { FreeDotLinkBanner } from "../domains/free-dot-link-banner";
-import { AlertCircleFill } from "../shared/icons";
+import { AlertCircleFill, Random } from "../shared/icons";
 import { UpgradeRequiredToast } from "../shared/upgrade-required-toast";
 import { useAvailableDomains } from "./use-available-domains";
 
@@ -218,7 +219,7 @@ export const ShortLinkInput = forwardRef<HTMLInputElement, ShortLinkInputProps>(
                 ) && setLockKey(false);
               }}
             >
-              <Lock className="h-3 w-3" />
+              <PenWriting className="size-3.5" />
             </button>
           ) : (
             <div className="flex items-center gap-1">
@@ -366,7 +367,7 @@ export const ShortLinkInput = forwardRef<HTMLInputElement, ShortLinkInputProps>(
               {error.split(`Upgrade to ${nextPlan.name}`)[0]}
               <a
                 className="cursor-pointer underline"
-                href={`/${slug}/upgrade?exit=close`}
+                href={`/${slug}/upgrade`}
                 target="_blank"
               >
                 Upgrade to {nextPlan.name}
@@ -458,6 +459,7 @@ function DomainCombobox({
   const {
     domains,
     allWorkspaceDomains,
+    activeWorkspaceDomains,
     loading: loadingDomains,
   } = useAvailableDomains({
     search: useAsync ? debouncedSearch : undefined,
@@ -474,17 +476,30 @@ function DomainCombobox({
 
   const [isOpen, setIsOpen] = useState(false);
 
-  useKeyboardShortcut("d", () => setIsOpen(true), { modal: true });
+  const { link } = useParams() as { link: string | string[] };
+  const pathname = usePathname();
+  useKeyboardShortcut("d", () => setIsOpen(true), {
+    // We're in a modal if this isn't a link page and isn't onboarding
+    modal: !link && !pathname.startsWith("/onboarding"),
+  });
 
   const options = useMemo(
     () =>
       loadingDomains
         ? undefined
-        : domains?.map(({ slug }) => ({
-            value: slug,
-            label: punycode(slug),
-          })),
-    [loadingDomains, domains],
+        : domains?.reduce<
+            Array<{ value: string; label: string; separatorAfter?: boolean }>
+          >((acc, { slug }, idx) => {
+            acc.push({
+              value: slug,
+              label: punycode(slug),
+              separatorAfter:
+                activeWorkspaceDomains?.some((d) => d.slug === slug) &&
+                idx === activeWorkspaceDomains.length - 1,
+            });
+            return acc;
+          }, []),
+    [loadingDomains, domains, activeWorkspaceDomains],
   );
 
   return (

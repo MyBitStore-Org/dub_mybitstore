@@ -1,3 +1,8 @@
+enum FolderType {
+  default
+  mega
+}
+
 enum FolderAccessLevel {
   read // can view the links
   write // can view and move links
@@ -13,6 +18,7 @@ model Folder {
   id          String             @id @default(cuid())
   name        String
   projectId   String
+  type        FolderType         @default(default)
   accessLevel FolderAccessLevel? // Access level of the folder within the workspace
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
@@ -38,8 +44,7 @@ model FolderUser {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([folderId, userId])
-  @@index([userId])
-  @@index([folderId])
+  @@index(userId)
 }
 
 model FolderAccessRequest {
@@ -52,6 +57,5 @@ model FolderAccessRequest {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([folderId, userId])
-  @@index([userId])
-  @@index([folderId])
+  @@index(userId)
 }

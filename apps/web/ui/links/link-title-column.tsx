@@ -1,10 +1,13 @@
 "use client";
 
 import useDomain from "@/lib/swr/use-domain";
+import useFolder from "@/lib/swr/use-folder";
 import useWorkspace from "@/lib/swr/use-workspace";
+import { UserProps } from "@/lib/types";
 import {
   ArrowTurnRight2,
   Avatar,
+  CardList,
   CopyButton,
   LinkLogo,
   Switch,
@@ -13,11 +16,12 @@ import {
   useInViewport,
 } from "@dub/ui";
 import {
-  Apple,
+  AppleLogo,
   ArrowRight,
   Bolt,
   BoxArchive,
   Cards,
+  Check2,
   CircleHalfDottedClock,
   EarthPosition,
   Incognito,
@@ -36,11 +40,23 @@ import {
 } from "@dub/utils";
 import * as HoverCard from "@radix-ui/react-hover-card";
 import { Mail } from "lucide-react";
-import { memo, PropsWithChildren, useContext, useRef, useState } from "react";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
+import {
+  memo,
+  PropsWithChildren,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { FolderIcon } from "../folders/folder-icon";
 import { useLinkBuilder } from "../modals/link-builder";
 import { CommentsBadge } from "./comments-badge";
+import { useLinkSelection } from "./link-selection-provider";
 import { ResponseLink } from "./links-container";
 import { LinksDisplayContext } from "./links-display-provider";
+import { TestsBadge } from "./tests-badge";
 
 const quickViewSettings = [
   { label: "Conversion Tracking", icon: SquareChart, key: "trackConversion" },
@@ -48,53 +64,57 @@ const quickViewSettings = [
   { label: "Link Cloaking", icon: Incognito, key: "rewrite" },
   { label: "Password Protection", icon: InputPassword, key: "password" },
   { label: "Link Expiration", icon: CircleHalfDottedClock, key: "expiresAt" },
-  { label: "iOS Targeting", icon: Apple, key: "ios" },
+  { label: "iOS Targeting", icon: AppleLogo, key: "ios" },
   { label: "Android Targeting", icon: Robot, key: "android" },
   { label: "Geo Targeting", icon: EarthPosition, key: "geo" },
 ];
 
-export function LinkTitleColumn({ link }: { link: ResponseLink }) {
-  const { url, domain, key } = link;
+const LOGO_SIZE_CLASS_NAME =
+  "size-4 sm:size-6 group-data-[variant=loose]/card-list:sm:size-5";
 
+export function LinkTitleColumn({ link }: { link: ResponseLink }) {
+  const { domain, key } = link;
+
+  const { variant, loading } = useContext(CardList.Context);
   const { displayProperties } = useContext(LinksDisplayContext);
 
   const ref = useRef<HTMLDivElement>(null);
 
   const hasQuickViewSettings = quickViewSettings.some(({ key }) => link?.[key]);
 
+  const searchParams = useSearchParams();
+  const selectedFolderId = searchParams.get("folderId");
+
+  const { slug, defaultFolderId } = useWorkspace();
+
+  const showFolderIcon = useMemo(() => {
+    return Boolean(
+      !loading &&
+        link.folderId &&
+        ![defaultFolderId, selectedFolderId].includes(link.folderId),
+    );
+  }, [loading, link.folderId, defaultFolderId, selectedFolderId]);
+
+  const { folder } = useFolder({
+    folderId: link.folderId,
+    enabled: showFolderIcon,
+  });
+
   return (
     <div
       ref={ref}
       className="flex h-[32px] items-center gap-3 transition-[height] group-data-[variant=loose]/card-list:h-[60px]"
     >
-      <div
-        className={cn(
-          "relative hidden shrink-0 items-center justify-center",
-          displayProperties.includes("icon") && "sm:flex",
-        )}
-      >
-        {/* Link logo background circle */}
-        <div className="absolute inset-0 shrink-0 rounded-full border border-neutral-200 opacity-0 transition-opacity group-data-[variant=loose]/card-list:sm:opacity-100">
-          <div className="h-full w-full rounded-full border border-white bg-gradient-to-t from-neutral-100" />
-        </div>
-        <div className="relative pr-0.5 transition-[padding] group-data-[variant=loose]/card-list:sm:p-2">
-          {link.archived ? (
-            <Tooltip content="Archived">
-              <div>
-                <BoxArchive className="size-4 shrink-0 p-0.5 text-neutral-600 transition-[width,height] sm:h-6 sm:w-6 group-data-[variant=loose]/card-list:sm:h-5 group-data-[variant=loose]/card-list:sm:w-5" />
-              </div>
-            </Tooltip>
+      {variant === "compact" && showFolderIcon && (
+        <Link href={`/${slug}/links?folderId=${link.folderId}`}>
+          {folder ? (
+            <FolderIcon folder={folder} shape="square" innerClassName="p-1.5" />
           ) : (
-            <LinkLogo
-              apexDomain={getApexDomain(url)}
-              className="size-4 shrink-0 transition-[width,height] sm:h-6 sm:w-6 group-data-[variant=loose]/card-list:sm:h-5 group-data-[variant=loose]/card-list:sm:w-5"
-              imageProps={{
-                loading: "lazy",
-              }}
-            />
+            <div className="size-8 rounded-md bg-neutral-200" />
           )}
-        </div>
-      </div>
+        </Link>
+      )}
+      <LinkIcon link={link} />
       <div className="h-[24px] min-w-0 overflow-hidden transition-[height] group-data-[variant=loose]/card-list:h-[46px]">
         <div className="flex items-center gap-2">
           <div className="min-w-0 shrink grow-0 text-neutral-950">
@@ -102,7 +122,7 @@ export function LinkTitleColumn({ link }: { link: ResponseLink }) {
               {displayProperties.includes("title") && link.title ? (
                 <span
                   className={cn(
-                    "truncate font-semibold leading-6 text-neutral-800",
+                    "min-w-0 truncate font-semibold leading-6 text-neutral-800",
                     link.archived && "text-neutral-600",
                   )}
                 >
@@ -116,7 +136,7 @@ export function LinkTitleColumn({ link }: { link: ResponseLink }) {
                     rel="noopener noreferrer"
                     title={linkConstructor({ domain, key, pretty: true })}
                     className={cn(
-                      "truncate font-semibold leading-6 text-neutral-800 transition-colors hover:text-black",
+                      "font-semibold leading-6 text-neutral-800 transition-colors hover:text-black",
                       link.archived && "text-neutral-600",
                     )}
                   >
@@ -135,6 +155,11 @@ export function LinkTitleColumn({ link }: { link: ResponseLink }) {
               />
               {hasQuickViewSettings && <SettingsBadge link={link} />}
               {link.comments && <CommentsBadge comments={link.comments} />}
+              {link.testVariants &&
+                link.testCompletedAt &&
+                new Date(link.testCompletedAt) > new Date() && (
+                  <TestsBadge link={link} />
+                )}
             </div>
           </div>
           <Details link={link} compact />
@@ -159,7 +184,7 @@ function UnverifiedTooltip({
   const { verified } = useDomain({ slug: domain, enabled: isVisible });
 
   return (
-    <div ref={ref}>
+    <div ref={ref} className="min-w-0 truncate">
       {!isDubDomain(domain) && verified === false ? (
         <Tooltip
           content={
@@ -231,6 +256,73 @@ function SettingsBadge({ link }: { link: ResponseLink }) {
   );
 }
 
+const LinkIcon = memo(({ link }: { link: ResponseLink }) => {
+  const { isSelectMode, selectedLinkIds, handleLinkSelection } =
+    useLinkSelection();
+  const isSelected = selectedLinkIds.includes(link.id);
+
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={isSelected}
+      data-checked={isSelected}
+      onClick={(e) => handleLinkSelection(link.id, e)}
+      className={cn(
+        "group relative hidden shrink-0 items-center justify-center outline-none sm:flex",
+        isSelectMode && "flex",
+      )}
+    >
+      {/* Link logo background circle */}
+      <div className="absolute inset-0 shrink-0 rounded-full border border-neutral-200 opacity-0 transition-opacity group-data-[variant=loose]/card-list:sm:opacity-100">
+        <div className="h-full w-full rounded-full border border-white bg-gradient-to-t from-neutral-100" />
+      </div>
+      <div className="relative transition-[padding,transform] group-hover:scale-90 group-data-[variant=loose]/card-list:sm:p-2">
+        <div className="hidden sm:block">
+          {link.archived ? (
+            <BoxArchive
+              className={cn(
+                "shrink-0 p-0.5 text-neutral-600 transition-[width,height]",
+                LOGO_SIZE_CLASS_NAME,
+              )}
+            />
+          ) : (
+            <LinkLogo
+              apexDomain={getApexDomain(link.url)}
+              className={cn(
+                "shrink-0 transition-[width,height]",
+                LOGO_SIZE_CLASS_NAME,
+              )}
+              imageProps={{
+                loading: "lazy",
+              }}
+            />
+          )}
+        </div>
+        <div className="size-5 group-data-[variant=loose]/card-list:size-6 sm:hidden" />
+      </div>
+      {/* Checkbox */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center justify-center rounded-full border border-neutral-400 bg-white ring-0 ring-black/5",
+          "opacity-100 max-sm:ring sm:opacity-0",
+          "transition-all duration-150 group-hover:opacity-100 group-hover:ring group-focus-visible:opacity-100 group-focus-visible:ring",
+          "group-data-[checked=true]:opacity-100",
+        )}
+      >
+        <div
+          className={cn(
+            "rounded-full bg-neutral-800 p-0.5 group-data-[variant=loose]/card-list:p-1",
+            "scale-90 opacity-0 transition-[transform,opacity] duration-100 group-data-[checked=true]:scale-100 group-data-[checked=true]:opacity-100",
+          )}
+        >
+          <Check2 className="size-3 text-white" />
+        </div>
+      </div>
+    </button>
+  );
+});
+
 const Details = memo(
   ({ link, compact }: { link: ResponseLink; compact?: boolean }) => {
     const { url, createdAt } = link;
@@ -284,7 +376,7 @@ const Details = memo(
             displayProperties.includes("user") && "sm:block",
           )}
         >
-          <UserAvatar link={link} />
+          <UserAvatar user={link.user} />
         </div>
         <div
           className={cn(
@@ -301,10 +393,8 @@ const Details = memo(
   },
 );
 
-function UserAvatar({ link }: { link: ResponseLink }) {
-  const { user } = link;
-  const { slug } = useWorkspace();
-
+export function UserAvatar({ user }: { user: UserProps }) {
+  const { slug } = useParams();
   return (
     <Tooltip
       content={

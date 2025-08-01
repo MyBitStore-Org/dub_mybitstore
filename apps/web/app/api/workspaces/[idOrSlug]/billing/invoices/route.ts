@@ -10,6 +10,7 @@ const querySchema = z.object({
   type: z.enum(["subscription", "payout"]).optional().default("subscription"),
 });
 
+// TODO: move to GET /invoices
 export const GET = withWorkspace(async ({ workspace, searchParams }) => {
   if (!workspace.stripeId) {
     return NextResponse.json([]);
@@ -55,8 +56,8 @@ const payoutInvoices = async (workspaceId: string) => {
       id: true,
       total: true,
       createdAt: true,
-      receiptUrl: true,
       status: true,
+      failedReason: true,
     },
     orderBy: {
       createdAt: "desc",

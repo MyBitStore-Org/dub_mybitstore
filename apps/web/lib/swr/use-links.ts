@@ -5,6 +5,7 @@ import useSWR, { SWRConfiguration } from "swr";
 import { z } from "zod";
 import { ExpandedLinkProps, UserProps } from "../types";
 import { getLinksQuerySchemaExtended } from "../zod/schemas/links";
+import { useIsMegaFolder } from "./use-is-mega-folder";
 import useWorkspace from "./use-workspace";
 
 const partialQuerySchema = getLinksQuerySchemaExtended.partial();
@@ -15,6 +16,7 @@ export default function useLinks(
 ) {
   const { id: workspaceId } = useWorkspace();
   const { getQueryString } = useRouterStuff();
+  const { isMegaFolder } = useIsMegaFolder();
 
   const [admin, setAdmin] = useState(false);
   useEffect(() => {
@@ -37,12 +39,27 @@ export default function useLinks(
           {
             workspaceId,
             includeUser: "true",
-            includeWebhooks: "true",
             includeDashboard: "true",
             ...opts,
+            // don't show archived on mega folders
+            ...(isMegaFolder
+              ? {
+                  showArchived: "false",
+                }
+              : {}),
           },
           {
-            exclude: ["import", "upgrade", "newLink"],
+            include: [
+              "folderId",
+              "tagIds",
+              "domain",
+              "userId",
+              "search",
+              "page",
+              "sortBy",
+              "sortOrder",
+              "showArchived",
+            ],
           },
         )}`
       : admin

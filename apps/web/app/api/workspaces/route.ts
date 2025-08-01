@@ -1,15 +1,20 @@
 import { DubApiError } from "@/lib/api/errors";
+import { createWorkspaceId, prefixWorkspaceId } from "@/lib/api/workspace-id";
 import { withSession } from "@/lib/auth";
 import { checkIfUserExists } from "@/lib/planetscale";
+import { storage } from "@/lib/storage";
 import {
-  WorkspaceSchema,
   createWorkspaceSchema,
+  WorkspaceSchema,
 } from "@/lib/zod/schemas/workspaces";
+import { subscribe } from "@dub/email/resend/subscribe";
 import { prisma } from "@dub/prisma";
+import { Prisma } from "@dub/prisma/client";
 import {
   FREE_WORKSPACES_LIMIT,
   generateRandomString,
   nanoid,
+  R2_URL,
 } from "@dub/utils";
 import { waitUntil } from "@vercel/functions";
 import { NextResponse } from "next/server";
@@ -31,6 +36,7 @@ export const GET = withSession(async ({ session }) => {
         },
         select: {
           role: true,
+          defaultFolderId: true,
         },
       },
       domains: {
@@ -41,19 +47,23 @@ export const GET = withSession(async ({ session }) => {
         },
       },
     },
+    orderBy: {
+      createdAt: "asc",
+    },
   });
+
   return NextResponse.json(
     workspaces.map((project) =>
       WorkspaceSchema.parse({
         ...project,
-        id: `ws_${project.id}`,
+        id: prefixWorkspaceId(project.id),
       }),
     ),
   );
 });
 
 export const POST = withSession(async ({ req, session }) => {
-  const { name, slug } = await createWorkspaceSchema.parseAsync(
+  const { name, slug, logo } = await createWorkspaceSchema.parseAsync(
     await req.json(),
   );
 
@@ -66,95 +76,132 @@ export const POST = withSession(async ({ req, session }) => {
     });
   }
 
-  const freeWorkspaces = await prisma.project.count({
-    where: {
-      plan: "free",
-      users: {
-        some: {
-          userId: session.user.id,
-          role: "owner",
-        },
-      },
-    },
-  });
-
-  if (freeWorkspaces >= FREE_WORKSPACES_LIMIT) {
-    throw new DubApiError({
-      code: "exceeded_limit",
-      message: `You can only create up to ${FREE_WORKSPACES_LIMIT} free workspaces. Additional workspaces require a paid plan.`,
-    });
-  }
-
   try {
-    const workspaceResponse = await prisma.project.create({
-      data: {
-        name,
-        slug,
-        users: {
-          create: {
-            userId: session.user.id,
-            role: "owner",
-            notificationPreference: {
-              create: {},
+    let uploadedImageUrl: string | undefined;
+
+    const workspace = await prisma.$transaction(
+      async (tx) => {
+        const freeWorkspaces = await tx.project.count({
+          where: {
+            plan: "free",
+            users: {
+              some: {
+                userId: session.user.id,
+                role: "owner",
+              },
             },
           },
-        },
-        billingCycleStart: new Date().getDate(),
-        invoicePrefix: generateRandomString(8),
-        inviteCode: nanoid(24),
-        defaultDomains: {
-          create: {}, // by default, we give users all the default domains when they create a project
-        },
-      },
-      include: {
-        users: {
-          where: {
-            userId: session.user.id,
-          },
-          select: {
-            role: true,
-          },
-        },
-        domains: {
-          select: {
-            slug: true,
-            primary: true,
-          },
-        },
-      },
-    });
+        });
 
-    // if the user has no default workspace, set the new workspace as the default
-    if (session.user["defaultWorkspace"] === null) {
-      waitUntil(
-        prisma.user.update({
-          where: {
-            id: session.user.id,
-          },
+        if (freeWorkspaces >= FREE_WORKSPACES_LIMIT) {
+          throw new DubApiError({
+            code: "exceeded_limit",
+            message: `You can only create up to ${FREE_WORKSPACES_LIMIT} free workspaces. Additional workspaces require a paid plan.`,
+          });
+        }
+
+        const workspaceId = createWorkspaceId();
+        uploadedImageUrl = logo
+          ? `${R2_URL}/workspaces/${workspaceId}/logo_${nanoid(7)}`
+          : undefined;
+
+        return await tx.project.create({
           data: {
-            defaultWorkspace: workspaceResponse.slug,
+            id: workspaceId,
+            name,
+            slug,
+            logo: uploadedImageUrl,
+            users: {
+              create: {
+                userId: session.user.id,
+                role: "owner",
+                notificationPreference: {
+                  create: {},
+                },
+              },
+            },
+            billingCycleStart: new Date().getDate(),
+            invoicePrefix: generateRandomString(8),
+            inviteCode: nanoid(24),
+            defaultDomains: {
+              create: {}, // by default, we give users all the default domains when they create a project
+            },
           },
+          include: {
+            users: {
+              where: {
+                userId: session.user.id,
+              },
+              select: {
+                role: true,
+                defaultFolderId: true,
+              },
+            },
+            domains: {
+              select: {
+                slug: true,
+                primary: true,
+              },
+            },
+          },
+        });
+      },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        maxWait: 5000,
+        timeout: 5000,
+      },
+    );
+
+    waitUntil(
+      Promise.allSettled([
+        // if the user has no default workspace, set the new workspace as the default
+        session.user["defaultWorkspace"] === null &&
+          prisma.user.update({
+            where: {
+              id: session.user.id,
+            },
+            data: {
+              defaultWorkspace: workspace.slug,
+            },
+          }),
+        // Subscribe the user to the app.dub.co Resend audience
+        subscribe({
+          email: session.user.email,
+          name: session.user.name || undefined,
+          audience: "app.dub.co",
         }),
-      );
-    }
+        // Upload logo to R2 if uploaded
+        logo &&
+          uploadedImageUrl &&
+          storage.upload(uploadedImageUrl.replace(`${R2_URL}/`, ""), logo),
+      ]),
+    );
 
     return NextResponse.json(
       WorkspaceSchema.parse({
-        ...workspaceResponse,
-        id: `ws_${workspaceResponse.id}`,
+        ...workspace,
+        id: prefixWorkspaceId(workspace.id),
       }),
     );
   } catch (error) {
-    if (error.code === "P2002") {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
       throw new DubApiError({
         code: "conflict",
         message: `The slug "${slug}" is already in use.`,
       });
-    } else {
-      throw new DubApiError({
-        code: "internal_server_error",
-        message: error.message,
-      });
     }
+
+    if (error instanceof DubApiError) {
+      throw error;
+    }
+
+    throw new DubApiError({
+      code: "internal_server_error",
+      message: "Error creating workspace. Please try again later.",
+    });
   }
 });

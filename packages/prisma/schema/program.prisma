@@ -1,71 +1,69 @@
-enum ProgramType {
-  affiliate
-  referral
-}
-
-enum CommissionType {
-  percentage
-  flat
-}
-
 enum ProgramEnrollmentStatus {
-  approved
-  pending
-  rejected
+  pending // pending applications that need approval
+  approved // partner who has been approved/actively enrolled
+  rejected // program rejected the partner
+  invited // partner who has been invited
+  declined // partner declined the invite
+  banned // partner is banned from the program
+  archived // partner is archived by the program
 }
 
-enum CommissionInterval {
-  month
-  year
+enum PartnerBannedReason {
+  tos_violation
+  inappropriate_content
+  fake_traffic
+  fraud
+  spam
+  brand_abuse
 }
 
-enum ProgramResourceType {
-  logo
-  files
+enum LinkStructure {
+  short
+  query
+  path
 }
 
 model Program {
-  id              String      @id @default(cuid())
-  workspaceId     String
-  defaultFolderId String?
-  name            String
-  slug            String      @unique
-  logo            String?
-  wordmark        String?
-  brandColor      String?
-  domain          String?
-  url             String?
-  type            ProgramType @default(affiliate)
-  cookieLength    Int         @default(90)
-
-  // Commission details
-  commissionAmount   Int                 @default(0)
-  commissionType     CommissionType      @default(percentage)
-  commissionDuration Int?
-  commissionInterval CommissionInterval?
-
-  // Discounts (for dual-sided incentives)
-  discounts Discount[]
-
-  landerData Json? @db.Json
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                           String        @id @default(cuid())
+  workspaceId                  String
+  defaultFolderId              String?
+  name                         String
+  slug                         String        @unique
+  logo                         String?
+  wordmark                     String?
+  brandColor                   String?
+  domain                       String?
+  url                          String?
+  cookieLength                 Int           @default(90)
+  holdingPeriodDays            Int           @default(0) // number of days to wait before earnings are added to a payout
+  minPayoutAmount              Int           @default(0) // Default minimum payout amount of $0
+  embedData                    Json?         @db.Json
+  landerData                   Json?         @db.Json
+  landerPublishedAt            DateTime?
+  resources                    Json?         @db.Json
+  termsUrl                     String?       @db.Text
+  helpUrl                      String?       @db.Text
+  supportEmail                 String?
+  ageVerification              Int?
+  linkStructure                LinkStructure @default(short)
+  linkParameter                String? // null for SHORT, "via" for QUERY, "refer" for PATH
+  autoApprovePartnersEnabledAt DateTime?
+  createdAt                    DateTime      @default(now())
+  updatedAt                    DateTime      @updatedAt
 
   workspace     Project              @relation(fields: [workspaceId], references: [id])
   primaryDomain Domain?              @relation(fields: [domain], references: [slug], onUpdate: Cascade)
   partners      ProgramEnrollment[]
   payouts       Payout[]
-  sales         Sale[]
   invoices      Invoice[]
-  resources     ProgramResource[]
   applications  ProgramApplication[]
-  invites       ProgramInvite[]
   links         Link[]
-  commissions Commission[]
+  commissions   Commission[]
+  rewards       Reward[]
+  discounts     Discount[]           @relation("ProgramDiscounts")
 
-  @@index([workspaceId])
-  @@index([domain])
+  @@index(workspaceId)
+  @@index(domain)
 }
 
 model ProgramEnrollment {
@@ -73,72 +71,49 @@ model ProgramEnrollment {
   partnerId        String
   programId        String
   tenantId         String?
-  linkId           String?                 @unique // TODO: Remove after the migration
-  commissionAmount Int? // custom commission amount for this partner
   discountId       String? // custom discount for this partner
+  clickRewardId    String?
+  leadRewardId     String?
+  saleRewardId     String?
   applicationId    String?                 @unique
   status           ProgramEnrollmentStatus @default(pending)
+  totalCommissions Int                     @default(0) // total commissions earned by the partner (in cents)
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
+  bannedAt         DateTime?
+  bannedReason     PartnerBannedReason?
 
   partner     Partner             @relation(fields: [partnerId], references: [id], onUpdate: Cascade, onDelete: Cascade)
   program     Program             @relation(fields: [programId], references: [id], onUpdate: Cascade, onDelete: Cascade)
   links       Link[]
   discount    Discount?           @relation(fields: [discountId], references: [id])
   application ProgramApplication? @relation(fields: [applicationId], references: [id])
+  clickReward Reward?             @relation("ClickRewardEnrollments", fields: [clickRewardId], references: [id])
+  leadReward  Reward?             @relation("LeadRewardEnrollments", fields: [leadRewardId], references: [id])
+  saleReward  Reward?             @relation("SaleRewardEnrollments", fields: [saleRewardId], references: [id])
 
   @@unique([partnerId, programId])
   @@unique([tenantId, programId])
-  @@index([programId])
-  @@index([discountId])
+  @@index(programId)
+  @@index(discountId)
+  @@index(clickRewardId)
+  @@index(leadRewardId)
+  @@index(saleRewardId)
 }
 
 model ProgramApplication {
   id        String   @id @default(cuid())
   programId String
-  partnerId String?
   name      String
   email     String
-  proposal  String?  @db.LongText
+  proposal  String?  @db.Text
   website   String?  @db.Text
-  comments  String?  @db.LongText
+  comments  String?  @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  partner    Partner?           @relation(fields: [partnerId], references: [id])
   program    Program            @relation(fields: [programId], references: [id])
   enrollment ProgramEnrollment?
 
-  @@index([programId])
-  @@index([partnerId])
-}
-
-// TODO: Haven't finalized the resource table yet.
-model ProgramResource {
-  id        String              @id @default(cuid())
-  programId String
-  type      ProgramResourceType
-  name      String
-  url       String
-  size      Int?
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
-
-  program Program @relation(fields: [programId], references: [id])
-
-  @@index([programId])
-}
-
-model ProgramInvite {
-  id        String   @id @default(cuid())
-  programId String
-  email     String
-  linkId    String   @unique
-  createdAt DateTime @default(now())
-
-  program Program @relation(fields: [programId], references: [id])
-  link    Link?   @relation(fields: [linkId], references: [id])
-
-  @@unique([email, programId])
-  @@index([programId])
+  @@index(programId)
 }

@@ -6,9 +6,11 @@ import { prisma } from "@dub/prisma";
 export async function getLinksCount({
   searchParams,
   workspaceId,
+  folderIds,
 }: {
   searchParams: z.infer<typeof getLinksCountQuerySchema>;
   workspaceId: string;
+  folderIds?: string[];
 }) {
   const {
     groupBy,
@@ -21,35 +23,55 @@ export async function getLinksCount({
     showArchived,
     withTags,
     folderId,
+    tenantId,
   } = searchParams;
 
   const combinedTagIds = combineTagIds({ tagId, tagIds });
 
   const linksWhere = {
     projectId: workspaceId,
+    AND: [
+      ...(folderIds
+        ? [
+            {
+              OR: [
+                {
+                  folderId: {
+                    in: folderIds,
+                  },
+                },
+                {
+                  folderId: null,
+                },
+              ],
+            },
+          ]
+        : [
+            {
+              folderId: folderId || null,
+            },
+          ]),
+      ...(search
+        ? [
+            {
+              OR: [
+                { shortLink: { contains: search } },
+                { url: { contains: search } },
+              ],
+            },
+          ]
+        : []),
+    ],
     archived: showArchived ? undefined : false,
-    ...(search && {
-      OR: [
-        {
-          shortLink: { contains: search },
-        },
-        {
-          url: { contains: search },
-        },
-      ],
-    }),
-    // when filtering by domain, only filter by domain if the filter group is not "Domains"
     ...(domain &&
       groupBy !== "domain" && {
         domain,
       }),
-    // when filtering by user, only filter by user if the filter group is not "Users"
     ...(userId &&
       groupBy !== "userId" && {
         userId,
       }),
-    // when filtering by folder, only filter by folder if the filter group is not "Folders"
-    folderId: folderId && groupBy !== "folderId" ? folderId : null,
+    ...(tenantId && { tenantId }),
   };
 
   if (groupBy === "tagId") {

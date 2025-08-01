@@ -5,6 +5,7 @@ import useWorkspace from "@/lib/swr/use-workspace";
 import { NewWebhook, WebhookProps } from "@/lib/types";
 import {
   LINK_LEVEL_WEBHOOK_TRIGGERS,
+  PARTNERS_WEBHOOK_TRIGGERS,
   WEBHOOK_TRIGGER_DESCRIPTIONS,
   WORKSPACE_LEVEL_WEBHOOK_TRIGGERS,
 } from "@/lib/webhook/constants";
@@ -118,6 +119,13 @@ export default function AddEditWebhookForm({
     triggers.includes(trigger),
   );
 
+  const workspaceLevelTriggers = WORKSPACE_LEVEL_WEBHOOK_TRIGGERS.filter(
+    (trigger) =>
+      PARTNERS_WEBHOOK_TRIGGERS.includes(trigger as any)
+        ? partnersEnabled
+        : true,
+  );
+
   return (
     <>
       <form
@@ -196,10 +204,7 @@ export default function AddEditWebhookForm({
             </span>
           </label>
           <div className="mt-3 flex flex-col gap-2">
-            {WORKSPACE_LEVEL_WEBHOOK_TRIGGERS.filter(
-              // if partners are not enabled, don't show partner.created
-              (trigger) => partnersEnabled || trigger !== "partner.created",
-            ).map((trigger) => (
+            {workspaceLevelTriggers.map((trigger) => (
               <div key={trigger} className="group flex gap-2">
                 <Checkbox
                   value={trigger}

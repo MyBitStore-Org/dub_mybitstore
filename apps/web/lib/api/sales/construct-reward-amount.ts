@@ -1,4 +1,4 @@
-import { CommissionType } from "@dub/prisma/client";
+import { RewardStructure } from "@dub/prisma/client";
 import { currencyFormatter } from "@dub/utils";
 
 export const constructRewardAmount = ({
@@ -6,11 +6,17 @@ export const constructRewardAmount = ({
   type,
 }: {
   amount: number;
-  type: CommissionType;
+  type: RewardStructure;
 }) => {
   return type === "percentage"
     ? `${amount}%`
-    : currencyFormatter(amount / 100, {
-        maximumFractionDigits: 2,
-      });
+    : currencyFormatter(
+        amount / 100,
+        amount % 100 === 0
+          ? undefined
+          : {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            },
+      );
 };

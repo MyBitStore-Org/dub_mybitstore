@@ -1,11 +1,12 @@
 import z from "@/lib/zod";
 import { clickEventSchema } from "../zod/schemas/clicks";
+import { CommissionEnrichedSchema } from "../zod/schemas/commissions";
 import { CustomerSchema } from "../zod/schemas/customers";
 import { linkEventSchema } from "../zod/schemas/links";
 import { EnrolledPartnerSchema } from "../zod/schemas/partners";
 import { WEBHOOK_TRIGGERS } from "./constants";
 
-const saleSchema = z.object({
+const webhookSaleSchema = z.object({
   amount: z.number(),
   currency: z.string(),
   paymentProcessor: z.string(),
@@ -29,7 +30,7 @@ export const saleWebhookEventSchema = z.object({
   customer: CustomerSchema,
   click: clickEventSchema,
   link: linkEventSchema,
-  sale: saleSchema,
+  sale: webhookSaleSchema,
 });
 
 // Schema of the payload sent to the webhook endpoint by Dub
@@ -102,13 +103,25 @@ export const webhookEventSchema = z
     z
       .object({
         id: z.string(),
-        event: z.literal("partner.created"),
+        event: z.literal("partner.enrolled"),
         createdAt: z.string(),
         data: EnrolledPartnerSchema,
       })
       .openapi({
-        ref: "PartnerCreatedEvent",
-        description: "Triggered when a partner is created.",
+        ref: "PartnerEnrolledEvent",
+        description: "Triggered when a partner is enrolled.",
+      }),
+
+    z
+      .object({
+        id: z.string(),
+        event: z.literal("commission.created"),
+        createdAt: z.string(),
+        data: CommissionEnrichedSchema,
+      })
+      .openapi({
+        ref: "CommissionCreatedEvent",
+        description: "Triggered when a commission is created for a partner.",
       }),
   ])
   .openapi({

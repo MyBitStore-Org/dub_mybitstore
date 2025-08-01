@@ -10,56 +10,66 @@ export const trackLeadRequestSchema = z.object({
     .trim()
     .min(1, "clickId is required")
     .describe(
-      "The ID of the click in th Dub. You can read this value from `dub_id` cookie.",
+      "The unique ID of the click that the lead conversion event is attributed to. You can read this value from `dub_id` cookie.",
     ),
   eventName: z
     .string({ required_error: "eventName is required" })
     .trim()
     .min(1, "eventName is required")
-    .max(50)
-    .describe("The name of the event to track.")
-    .openapi({ example: "Sign up" }),
-  externalId: z
-    .string()
-    .trim()
-    .max(100)
-    .default("") // Remove this after migrating users from customerId to externalId
+    .max(255)
     .describe(
-      "This is the unique identifier for the customer in the client's app. This is used to track the customer's journey.",
-    ),
-  customerId: z
-    .string()
-    .trim()
-    .max(100)
-    .nullish()
-    .default(null)
-    .describe(
-      "This is the unique identifier for the customer in the client's app. This is used to track the customer's journey.",
+      "The name of the lead event to track. Can also be used as a unique identifier to associate a given lead event for a customer for a subsequent sale event (via the `leadEventName` prop in `/track/sale`).",
     )
-    .openapi({ deprecated: true }),
+    .openapi({ example: "Sign up" }),
+  customerExternalId: z
+    .string()
+    .trim()
+    .max(100)
+    .describe(
+      "The unique ID of the customer in your system. Will be used to identify and attribute all future events to this customer.",
+    ),
   customerName: z
     .string()
     .max(100)
     .nullish()
     .default(null)
-    .describe("Name of the customer in the client's app."),
+    .describe(
+      "The name of the customer. If not passed, a random name will be generated (e.g. “Big Red Caribou”).",
+    ),
   customerEmail: z
     .string()
     .email()
     .max(100)
     .nullish()
     .default(null)
-    .describe("Email of the customer in the client's app."),
+    .describe("The email address of the customer."),
   customerAvatar: z
     .string()
     .nullish()
     .default(null)
-    .describe("Avatar of the customer in the client's app."),
+    .describe("The avatar URL of the customer."),
+  eventQuantity: z
+    .number()
+    .nullish()
+    .describe(
+      "The numerical value associated with this lead event (e.g., number of provisioned seats in a free trial). If defined as N, the lead event will be tracked N times.",
+    ),
+  mode: z
+    .enum(["async", "wait"])
+    .default("async")
+    .describe(
+      "The mode to use for tracking the lead event. `async` will not block the request; `wait` will block the request until the lead event is fully recorded in Dub.",
+    ),
   metadata: z
     .record(z.unknown())
     .nullish()
     .default(null)
-    .describe("Additional metadata to be stored with the lead event"),
+    .refine((val) => !val || JSON.stringify(val).length <= 10000, {
+      message: "Metadata must be less than 10,000 characters when stringified",
+    })
+    .describe(
+      "Additional metadata to be stored with the lead event. Max 10,000 characters.",
+    ),
 });
 
 export const trackLeadResponseSchema = z.object({
@@ -76,7 +86,7 @@ export const trackLeadResponseSchema = z.object({
 
 export const leadEventSchemaTB = clickEventSchemaTB
   .omit({ timestamp: true }) // remove timestamp from lead data because tinybird will generate its own at ingestion time
-  .and(
+  .merge(
     z.object({
       event_id: z.string(),
       event_name: z.string(),
@@ -123,4 +133,15 @@ export const leadEventResponseSchema = z
     customer: CustomerSchema,
   })
   .merge(commonDeprecatedEventFields)
-  .openapi({ ref: "LeadEvent" });
+  .openapi({ ref: "LeadEvent", title: "LeadEvent" });
+
+export const leadEventResponseSchemaExtended = leadEventResponseSchema.merge(
+  z.object({
+    metadata: z
+      .string()
+      .nullish()
+      .transform((val) => (val === "" ? null : val))
+      .default(null)
+      .openapi({ type: "string" }),
+  }),
+);

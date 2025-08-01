@@ -1,6 +1,8 @@
+import { allowedHostnamesCache } from "@/lib/analytics/allowed-hostnames-cache";
 import { DubApiError } from "@/lib/api/errors";
 import { parseRequestBody } from "@/lib/api/utils";
 import { validateAllowedHostnames } from "@/lib/api/validate-allowed-hostnames";
+import { prefixWorkspaceId } from "@/lib/api/workspace-id";
 import { deleteWorkspace } from "@/lib/api/workspaces";
 import { withWorkspace } from "@/lib/auth";
 import { getFeatureFlags } from "@/lib/edge-config";
@@ -8,6 +10,7 @@ import { storage } from "@/lib/storage";
 import {
   updateWorkspaceSchema,
   WorkspaceSchema,
+  WorkspaceSchemaExtended,
 } from "@/lib/zod/schemas/workspaces";
 import { prisma } from "@dub/prisma";
 import { nanoid, R2_URL } from "@dub/utils";
@@ -17,36 +20,32 @@ import { NextResponse } from "next/server";
 // GET /api/workspaces/[idOrSlug] – get a specific workspace by id or slug
 export const GET = withWorkspace(
   async ({ workspace, headers }) => {
-    const [domains, yearInReviews] = await Promise.all([
-      prisma.domain.findMany({
-        where: {
-          projectId: workspace.id,
-        },
-        select: {
-          slug: true,
-          primary: true,
-        },
-        take: 100,
-      }),
-      prisma.yearInReview.findMany({
-        where: {
-          workspaceId: workspace.id,
-          year: 2024,
-        },
-      }),
-    ]);
+    const domains = await prisma.domain.findMany({
+      where: {
+        projectId: workspace.id,
+      },
+      select: {
+        id: true,
+        slug: true,
+        primary: true,
+        verified: true,
+        linkRetentionDays: true,
+      },
+      take: 100,
+    });
+
+    const flags = await getFeatureFlags({
+      workspaceId: workspace.id,
+    });
 
     return NextResponse.json(
       {
-        ...WorkspaceSchema.parse({
+        ...WorkspaceSchemaExtended.parse({
           ...workspace,
-          id: `ws_${workspace.id}`,
+          id: prefixWorkspaceId(workspace.id),
           domains,
-          flags: await getFeatureFlags({
-            workspaceId: workspace.id,
-          }),
+          flags,
         }),
-        yearInReview: yearInReviews.length > 0 ? yearInReviews[0] : null,
       },
       { headers },
     );
@@ -75,7 +74,7 @@ export const PATCH = withWorkspace(
 
     const logoUploaded = logo
       ? await storage.upload(
-          `workspaces/ws_${workspace.id}/logo_${nanoid(7)}`,
+          `workspaces/${prefixWorkspaceId(workspace.id)}/logo_${nanoid(7)}`,
           logo,
         )
       : null;
@@ -95,7 +94,14 @@ export const PATCH = withWorkspace(
           }),
         },
         include: {
-          domains: true,
+          domains: {
+            select: {
+              slug: true,
+              primary: true,
+              verified: true,
+            },
+            take: 100,
+          },
           users: true,
         },
       });
@@ -116,13 +122,34 @@ export const PATCH = withWorkspace(
           if (logoUploaded && workspace.logo) {
             await storage.delete(workspace.logo.replace(`${R2_URL}/`, ""));
           }
+
+          // Sync the allowedHostnames cache for workspace domains
+          const current = JSON.stringify(workspace.allowedHostnames);
+          const next = JSON.stringify(response.allowedHostnames);
+          const domains = response.domains.map(({ slug }) => slug);
+
+          if (current !== next) {
+            if (
+              Array.isArray(response.allowedHostnames) &&
+              response.allowedHostnames.length > 0
+            ) {
+              allowedHostnamesCache.mset({
+                allowedHostnames: next,
+                domains,
+              });
+            } else {
+              allowedHostnamesCache.deleteMany({
+                domains,
+              });
+            }
+          }
         })(),
       );
 
       return NextResponse.json(
         WorkspaceSchema.parse({
           ...response,
-          id: `ws_${response.id}`,
+          id: prefixWorkspaceId(response.id),
           flags: await getFeatureFlags({
             workspaceId: response.id,
           }),

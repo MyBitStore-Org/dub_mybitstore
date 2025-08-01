@@ -1,7 +1,9 @@
 import { DeviceTabs } from "@/lib/analytics/types";
-import { Apple, Chrome, Safari } from "@/ui/shared/icons/devices";
+import { Chrome, Safari } from "@/ui/shared/icons/devices";
 import { BlurImage } from "@dub/ui";
 import {
+  AppleLogo,
+  Cube,
   CursorRays,
   Desktop,
   GamingConsole,
@@ -10,6 +12,7 @@ import {
   TV,
   Tablet,
   Watch,
+  Window,
 } from "@dub/ui/icons";
 
 export default function DeviceIcon({
@@ -39,44 +42,51 @@ export default function DeviceIcon({
         return <Desktop className={className} />;
     }
   } else if (tab === "browsers") {
-    if (display === "Chrome") {
-      return <Chrome className={className} />;
-    } else if (display === "Safari" || display === "Mobile Safari") {
-      return <Safari className={className} />;
-    } else {
-      return (
-        <BlurImage
-          src={`https://faisalman.github.io/ua-parser-js/images/browsers/${display.toLowerCase()}.png`}
-          alt={display}
-          width={20}
-          height={20}
-          className={className}
-        />
-      );
+    switch (display) {
+      case "Chrome":
+        return <Chrome className={className} />;
+      case "Safari":
+      case "Mobile Safari":
+        return <Safari className={className} />;
+      case "Unknown":
+        return <Window className={className} />;
+      default:
+        return (
+          <BlurImage
+            src={`https://faisalman.github.io/ua-parser-js/images/browsers/${display.toLowerCase()}.png`}
+            alt={display}
+            width={20}
+            height={20}
+            className={className}
+          />
+        );
     }
   } else if (tab === "os") {
-    if (display === "Mac OS") {
-      return (
-        <BlurImage
-          src="https://assets.dub.co/misc/icons/macos.png"
-          alt={display}
-          width={20}
-          height={20}
-          className="h-4 w-4"
-        />
-      );
-    } else if (display === "iOS") {
-      return <Apple className="-ml-1 h-5 w-5" />;
-    } else {
-      return (
-        <BlurImage
-          src={`https://faisalman.github.io/ua-parser-js/images/os/${display.toLowerCase()}.png`}
-          alt={display}
-          width={30}
-          height={20}
-          className="h-4 w-5"
-        />
-      );
+    switch (display) {
+      case "Mac OS":
+        return (
+          <BlurImage
+            src="https://assets.dub.co/misc/icons/macos.png"
+            alt={display}
+            width={20}
+            height={20}
+            className="h-4 w-4"
+          />
+        );
+      case "iOS":
+        return <AppleLogo className="-ml-1 h-5 w-5" />;
+      case "Unknown":
+        return <Cube className={className} />;
+      default:
+        return (
+          <BlurImage
+            src={`https://faisalman.github.io/ua-parser-js/images/os/${display.toLowerCase()}.png`}
+            alt={display}
+            width={30}
+            height={20}
+            className="h-4 w-5"
+          />
+        );
     }
   } else if (tab === "triggers") {
     if (display === "qr") {

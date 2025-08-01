@@ -1,5 +1,5 @@
+import { createId } from "@/lib/api/create-id";
 import { includeTags } from "@/lib/api/links/include-tags";
-import { createId } from "@/lib/api/utils";
 import { generateRandomName } from "@/lib/names";
 import { getClickEvent, recordLead } from "@/lib/tinybird";
 import { sendWorkspaceWebhook } from "@/lib/webhook/publish";
@@ -19,9 +19,19 @@ export async function createShopifyLead({
   workspaceId: string;
   event: any;
 }) {
-  const {
-    customer: { id: externalId, email, first_name, last_name },
-  } = orderSchema.parse(event);
+  const { customer: orderCustomer } = orderSchema.parse(event);
+
+  const customerId = createId({ prefix: "cus_" });
+  /*
+     if orderCustomer is undefined (guest checkout):
+    - use the customerId as the externalId
+    - generate random name + email
+  */
+  const externalId = orderCustomer?.id?.toString() || customerId; // need to convert to string because Shopify customer ID is a number
+  const name = orderCustomer
+    ? `${orderCustomer.first_name} ${orderCustomer.last_name}`.trim()
+    : generateRandomName();
+  const email = orderCustomer?.email;
 
   // find click
   const clickEvent = await getClickEvent({ clickId });
@@ -32,11 +42,10 @@ export async function createShopifyLead({
   // create customer
   const customer = await prisma.customer.create({
     data: {
-      id: createId({ prefix: "cus_" }),
-      // need to convert to string because Shopify customer ID is a number
-      externalId: externalId.toString(),
-      name: `${first_name} ${last_name}`.trim() || generateRandomName(),
-      email: email || null,
+      id: customerId,
+      externalId,
+      name,
+      email,
       projectId: workspaceId,
       clickedAt: new Date(timestamp + "Z"),
       clickId,
@@ -83,23 +92,6 @@ export async function createShopifyLead({
       },
     }),
   ]);
-
-  if (link.programId && link.partnerId) {
-    // TODO: check if there is a Lead Reward Rule for this partner and if yes, create a lead commission
-    // await prisma.commission.create({
-    //   data: {
-    //     id: createId({ prefix: "cm_" }),
-    //     programId: link.programId,
-    //     linkId: link.id,
-    //     partnerId: link.partnerId,
-    //     eventId: leadData.event_id,
-    //     customerId: customer.id,
-    //     type: "lead",
-    //     amount: 0,
-    //     quantity: 1,
-    //   },
-    // });
-  }
 
   waitUntil(
     sendWorkspaceWebhook({

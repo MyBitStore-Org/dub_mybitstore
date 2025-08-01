@@ -1,19 +1,6 @@
-import { DUB_FOUNDING_DATE } from "@dub/utils";
+import { THE_BEGINNING_OF_TIME } from "@dub/utils";
 
-export const intervals = [
-  "24h",
-  "7d",
-  "30d",
-  "90d",
-  "1y",
-  "mtd",
-  "qtd",
-  "ytd",
-  "all",
-  "all_unfiltered",
-] as const;
-
-export const eventIntervals = [
+export const DATE_RANGE_INTERVAL_PRESETS = [
   "24h",
   "7d",
   "30d",
@@ -24,6 +11,9 @@ export const eventIntervals = [
   "ytd",
   "all",
 ] as const;
+
+export const DUB_LINKS_ANALYTICS_INTERVAL = "24h";
+export const DUB_PARTNERS_ANALYTICS_INTERVAL = "30d";
 
 export const INTERVAL_DISPLAYS = [
   {
@@ -117,8 +107,7 @@ export const INTERVAL_DATA: Record<
     granularity: "month",
   },
   all: {
-    // Dub.co founding date
-    startDate: DUB_FOUNDING_DATE,
+    startDate: THE_BEGINNING_OF_TIME,
     granularity: "month",
   },
 };
@@ -137,6 +126,7 @@ export const VALID_ANALYTICS_ENDPOINTS = [
   "triggers",
   "referers",
   "referer_urls",
+  "top_partners",
   "top_links",
   "top_urls",
   "utm_sources",
@@ -181,11 +171,35 @@ export const VALID_ANALYTICS_FILTERS = [
   "referer",
   "refererUrl",
   "url",
-  "tagId",
+  "partnerId",
   "folderId",
+  "tagId",
   "tagIds",
-  "qr",
+  "customerId",
+  "qr", // deprecated, but keeping for now for backwards compatibility
   "root",
+  "saleType",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+];
+
+// possible analytics filters for a given linkId
+export const DIMENSIONAL_ANALYTICS_FILTERS = [
+  "country",
+  "city",
+  "region",
+  "continent",
+  "device",
+  "browser",
+  "os",
+  "trigger",
+  "referer",
+  "refererUrl",
+  "url",
+  "qr", // deprecated, but keeping for now for backwards compatibility
   "utm_source",
   "utm_medium",
   "utm_campaign",
@@ -194,10 +208,12 @@ export const VALID_ANALYTICS_FILTERS = [
 ];
 
 export const TRIGGER_DISPLAY = {
-  qr: "QR Scan",
+  qr: "QR Code Scan",
   link: "Link Click",
+  pageview: "Page View",
+  deeplink: "Deep Link",
 };
-export const TRIGGER_TYPES = ["qr", "link"] as const;
+export const TRIGGER_TYPES = ["qr", "link", "pageview", "deeplink"] as const;
 
 export const EVENT_TYPES = ["clicks", "leads", "sales"] as const;
 

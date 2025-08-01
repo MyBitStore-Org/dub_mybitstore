@@ -1,4 +1,9 @@
-import { ProgramSchema } from "@/lib/zod/schemas/programs";
+import { sortRewardsByEventOrder } from "@/lib/partners/sort-rewards-by-event-order";
+import { ProgramProps } from "@/lib/types";
+import {
+  ProgramSchema,
+  ProgramWithLanderDataSchema,
+} from "@/lib/zod/schemas/programs";
 import { prisma } from "@dub/prisma";
 import { DubApiError } from "../errors";
 
@@ -11,28 +16,37 @@ export const getProgramOrThrow = async (
     programId: string;
   },
   {
-    includeDiscounts = false,
+    includeDefaultDiscount = false,
+    includeDefaultRewards = false,
+    includeLanderData = false,
   }: {
-    includeDiscounts?: boolean;
+    includeDefaultRewards?: boolean;
+    includeDefaultDiscount?: boolean;
+    includeLanderData?: boolean;
   } = {},
 ) => {
-  const program = await prisma.program.findUnique({
+  const program = (await prisma.program.findUnique({
     where: {
       id: programId,
       workspaceId,
     },
-    ...(includeDiscounts
-      ? {
-          include: {
-            discounts: {
-              orderBy: {
-                createdAt: "asc",
-              },
-            },
+    include: {
+      ...(includeDefaultRewards && {
+        rewards: {
+          where: {
+            default: true,
           },
-        }
-      : {}),
-  });
+        },
+      }),
+      ...(includeDefaultDiscount && {
+        discounts: {
+          where: {
+            default: true,
+          },
+        },
+      }),
+    },
+  })) as ProgramProps | null;
 
   if (!program) {
     throw new DubApiError({
@@ -41,5 +55,15 @@ export const getProgramOrThrow = async (
     });
   }
 
-  return ProgramSchema.parse(program);
+  return (
+    includeLanderData ? ProgramWithLanderDataSchema : ProgramSchema
+  ).parse({
+    ...program,
+    ...(includeDefaultRewards && program.rewards?.length
+      ? { rewards: sortRewardsByEventOrder(program.rewards) }
+      : {}),
+    ...(includeDefaultDiscount && program.discounts?.length
+      ? { discounts: [program.discounts[0]] }
+      : {}),
+  });
 };

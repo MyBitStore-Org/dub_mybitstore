@@ -1,6 +1,9 @@
 import { prisma } from "@dub/prisma";
+import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
 import { cookies } from "next/headers";
-import { createId } from "../api/utils";
+import { createId } from "../api/create-id";
+import { notifyPartnerApplication } from "../api/partners/notify-partner-application";
+import { qstash } from "../cron";
 import { ratelimit } from "../upstash";
 
 /**
@@ -37,7 +40,7 @@ export async function completeProgramApplications(userId: string) {
           select: {
             partnerId: true,
             partner: {
-              select: {
+              include: {
                 programs: {
                   select: {
                     programId: true,
@@ -67,6 +70,9 @@ export async function completeProgramApplications(userId: string) {
             .flat(),
         },
       },
+      include: {
+        program: true,
+      },
       orderBy: {
         createdAt: "desc",
       },
@@ -91,7 +97,43 @@ export async function completeProgramApplications(userId: string) {
         partnerId: user.partners[0].partnerId,
         applicationId: programApplication.id,
       })),
+      skipDuplicates: true,
     });
+
+    for (const programApplication of programApplications) {
+      const partner = user.partners[0].partner;
+      const program = programApplication.program;
+      const application = programApplication;
+
+      await Promise.allSettled([
+        notifyPartnerApplication({
+          partner,
+          program,
+          application,
+        }),
+
+        // if the application has a website but the partner doesn't have a website (maybe they forgot to add during onboarding)
+        // update the partner to use the website they applied with
+        application.website &&
+          !partner.website &&
+          prisma.partner.update({
+            where: { id: partner.id },
+            data: { website: application.website },
+          }),
+
+        // Auto-approve the partner
+        program.autoApprovePartnersEnabledAt
+          ? qstash.publishJSON({
+              url: `${APP_DOMAIN_WITH_NGROK}/api/cron/auto-approve-partner`,
+              delay: 5 * 60,
+              body: {
+                programId: program.id,
+                partnerId: partner.id,
+              },
+            })
+          : Promise.resolve(null),
+      ]);
+    }
 
     cookieStore.delete("programApplicationIds");
   } catch (error) {

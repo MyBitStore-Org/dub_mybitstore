@@ -1,9 +1,9 @@
 import { DubApiError } from "@/lib/api/errors";
+import { queueFolderDeletion } from "@/lib/api/folders/queue-folder-deletion";
 import { parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
 import { verifyFolderAccess } from "@/lib/folder/permissions";
 import { getPlanCapabilities } from "@/lib/plan-capabilities";
-import { recordLink } from "@/lib/tinybird";
 import { FolderSchema, updateFolderSchema } from "@/lib/zod/schemas/folders";
 import { prisma } from "@dub/prisma";
 import { waitUntil } from "@vercel/functions";
@@ -31,9 +31,9 @@ export const GET = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
-    featureFlag: "linkFolders",
   },
 );
 
@@ -46,14 +46,19 @@ export const PATCH = withWorkspace(
       await parseRequestBody(req),
     );
 
-    const { canManageFolderPermissions } = getPlanCapabilities(workspace.plan);
+    if (accessLevel) {
+      const { canManageFolderPermissions } = getPlanCapabilities(
+        workspace.plan,
+      );
 
-    if (!canManageFolderPermissions && accessLevel !== "write") {
-      throw new DubApiError({
-        code: "forbidden",
-        message:
-          "You can only set access levels for folders on Business plans and above. Upgrade to Business to continue.",
-      });
+      // accessLevel is only allowed to be set on Business plans and above otherwise it should be always "write"
+      if (!canManageFolderPermissions && accessLevel !== "write") {
+        throw new DubApiError({
+          code: "forbidden",
+          message:
+            "You can only set access levels for folders on Business plans and above. Upgrade to Business to continue.",
+        });
+      }
     }
 
     await verifyFolderAccess({
@@ -95,9 +100,9 @@ export const PATCH = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
-    featureFlag: "linkFolders",
   },
 );
 
@@ -113,41 +118,46 @@ export const DELETE = withWorkspace(
       requiredPermission: "folders.write",
     });
 
-    const deletedFolder = await prisma.folder.delete({
+    const linksCount = await prisma.link.count({
       where: {
-        id: folderId,
-        projectId: workspace.id,
-      },
-      include: {
-        links: {
-          include: {
-            tags: {
-              include: {
-                tag: true,
-              },
-            },
-          },
-        },
+        folderId,
       },
     });
 
-    waitUntil(
-      (async () => {
-        const links = deletedFolder.links;
+    // if there are no links associated with the folder, we can just delete it
+    if (linksCount === 0) {
+      await prisma.folder.delete({
+        where: {
+          id: folderId,
+        },
+      });
+    } else {
+      await Promise.all([
+        prisma.folder.update({
+          where: {
+            id: folderId,
+          },
+          data: {
+            projectId: "",
+          },
+        }),
+        queueFolderDeletion({
+          folderId,
+        }),
+      ]);
+    }
 
-        // TODO:
-        // Handle this via background job if number of links is huge
-        if (links.length > 0) {
-          recordLink(
-            links.map((link) => {
-              return {
-                ...link,
-                folderId: null,
-              };
-            }),
-          );
-        }
-      })(),
+    waitUntil(
+      prisma.project.update({
+        where: {
+          id: workspace.id,
+        },
+        data: {
+          foldersUsage: {
+            decrement: 1,
+          },
+        },
+      }),
     );
 
     return NextResponse.json({ id: folderId });
@@ -160,8 +170,8 @@ export const DELETE = withWorkspace(
       "business plus",
       "business extra",
       "business max",
+      "advanced",
       "enterprise",
     ],
-    featureFlag: "linkFolders",
   },
 );

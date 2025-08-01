@@ -1,8 +1,8 @@
 "use client";
 
 import useDomainsCount from "@/lib/swr/use-domains-count";
-import useLinksCount from "@/lib/swr/use-links-count";
 import useUsers from "@/lib/swr/use-users";
+import useWorkspace from "@/lib/swr/use-workspace";
 import { CheckCircleFill, ThreeDots } from "@/ui/shared/icons";
 import { Button, Popover, useLocalStorage, useMediaQuery } from "@dub/ui";
 import { CircleDotted, ExpandingArrow } from "@dub/ui/icons";
@@ -29,11 +29,9 @@ function OnboardingButtonInner({
   onHideForever: () => void;
 }) {
   const { slug } = useParams() as { slug: string };
+  const { totalLinks } = useWorkspace();
 
   const { data: domainsCount, loading: domainsLoading } = useDomainsCount({
-    ignoreParams: true,
-  });
-  const { data: linksCount, loading: linksLoading } = useLinksCount<number>({
     ignoreParams: true,
   });
   const { users, loading: usersLoading } = useUsers();
@@ -41,34 +39,38 @@ function OnboardingButtonInner({
     invites: true,
   });
 
-  const loading =
-    domainsLoading || linksLoading || usersLoading || invitesLoading;
+  const loading = domainsLoading || usersLoading || invitesLoading;
 
   const tasks = useMemo(() => {
     return [
       {
-        display: "Create a new Dub link",
-        cta: `/${slug}`,
-        checked: linksCount > 0,
+        display: "Create your first short link",
+        cta: `/${slug}/links`,
+        checked: totalLinks === 0 ? false : true,
+        recommended: true,
       },
       {
         display: "Set up your custom domain",
         cta: `/${slug}/settings/domains`,
         checked: domainsCount && domainsCount > 0,
+        recommended: true,
       },
       {
         display: "Invite your teammates",
         cta: `/${slug}/settings/people`,
         checked: (users && users.length > 1) || (invites && invites.length > 0),
+        recommended: false,
       },
     ];
-  }, [slug, domainsCount, linksCount, users, invites]);
+  }, [slug, domainsCount, totalLinks, users, invites]);
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const completedTasks = tasks.filter((task) => task.checked).length;
+  const remainingRecommendedTasks = tasks.filter(
+    (task) => task.recommended && !task.checked,
+  ).length;
 
-  return loading || completedTasks === tasks.length ? null : (
+  return loading || remainingRecommendedTasks === 0 ? null : (
     <Popover
       align="end"
       popoverContentClassName="rounded-xl"
@@ -135,7 +137,8 @@ function OnboardingButtonInner({
       >
         <span>Getting Started</span>
         <span className="text-neutral-400">
-          {Math.round((completedTasks / tasks.length) * 100)}% complete
+          {Math.round((remainingRecommendedTasks / tasks.length) * 100)}%
+          complete
         </span>
       </button>
     </Popover>

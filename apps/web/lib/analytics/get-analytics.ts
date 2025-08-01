@@ -3,12 +3,15 @@ import { tb } from "@/lib/tinybird";
 import { UTM_TAGS_PLURAL_LIST } from "@/lib/zod/schemas/utm";
 import { prismaEdge } from "@dub/prisma/edge";
 import { linkConstructor, punyEncode } from "@dub/utils";
+import { decodeKeyIfCaseSensitive } from "../api/links/case-sensitivity";
 import { conn } from "../planetscale";
-import { tbDemo } from "../tinybird/demo-client";
 import z from "../zod";
 import { analyticsFilterTB } from "../zod/schemas/analytics";
 import { analyticsResponse } from "../zod/schemas/analytics-response";
-import { SINGULAR_ANALYTICS_ENDPOINTS } from "./constants";
+import {
+  DIMENSIONAL_ANALYTICS_FILTERS,
+  SINGULAR_ANALYTICS_ENDPOINTS,
+} from "./constants";
 import { AnalyticsFilters } from "./types";
 import { getStartEndDates } from "./utils/get-start-end-dates";
 
@@ -27,9 +30,7 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
     region,
     country,
     timezone = "UTC",
-    isDemo,
     isDeprecatedClicksEndpoint = false,
-    folderId,
     dataAvailableFrom,
   } = params;
 
@@ -38,8 +39,19 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
   // get all-time clicks count if:
   // 1. linkId is defined
   // 2. type is count
-  // 3. interval is all_unfiltered
-  if (linkId && groupBy === "count" && interval === "all_unfiltered") {
+  // 3. interval is all
+  // 4. no custom start or end date is provided
+  // 5. no other dimensional filters are applied
+  if (
+    linkId &&
+    groupBy === "count" &&
+    interval === "all" &&
+    !start &&
+    !end &&
+    DIMENSIONAL_ANALYTICS_FILTERS.every(
+      (filter) => !params[filter as keyof AnalyticsFilters],
+    )
+  ) {
     const columns =
       event === "composite"
         ? `clicks, leads, sales, saleAmount`
@@ -81,11 +93,13 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
   }
 
   // Create a Tinybird pipe
-  const pipe = (isDemo ? tbDemo : tb).buildPipe({
-    pipe: `v2_${UTM_TAGS_PLURAL_LIST.includes(groupBy) ? "utms" : groupBy}`,
+  const pipe = tb.buildPipe({
+    pipe: UTM_TAGS_PLURAL_LIST.includes(groupBy) ? "v2_utms" : `v2_${groupBy}`,
     parameters: analyticsFilterTB,
     data:
-      groupBy === "top_links" || UTM_TAGS_PLURAL_LIST.includes(groupBy)
+      groupBy === "top_links" ||
+      groupBy === "top_partners" ||
+      UTM_TAGS_PLURAL_LIST.includes(groupBy)
         ? z.any()
         : analyticsResponse[groupBy],
   });
@@ -98,7 +112,6 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
     eventType: event,
     workspaceId,
     tagIds,
-    folderId: folderId || (workspaceId ? "" : undefined),
     qr,
     start: startDate.toISOString().replace("T", " ").replace("Z", ""),
     end: endDate.toISOString().replace("T", " ").replace("Z", ""),
@@ -134,6 +147,7 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
         key: true,
         url: true,
         comments: true,
+        title: true,
         createdAt: true,
       },
     });
@@ -144,6 +158,12 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
         if (!link) {
           return null;
         }
+
+        link.key = decodeKeyIfCaseSensitive({
+          domain: link.domain,
+          key: link.key,
+        });
+
         return analyticsResponse[groupBy].parse({
           id: link.id,
           domain: link.domain,
@@ -154,6 +174,7 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
             key: punyEncode(link.key),
           }),
           comments: link.comments,
+          title: link.title || null,
           createdAt: link.createdAt.toISOString(),
           ...topLink,
         });
@@ -170,6 +191,33 @@ export const getAnalytics = async (params: AnalyticsFilters) => {
         [SINGULAR_ANALYTICS_ENDPOINTS[groupBy]]: item.utm,
       }),
     );
+  } else if (groupBy === "top_partners") {
+    const topPartnersData = response.data as {
+      partnerId: string;
+    }[];
+
+    const partners = await prismaEdge.partner.findMany({
+      where: {
+        id: {
+          in: topPartnersData.map((item) => item.partnerId),
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        image: true,
+        country: true,
+        payoutsEnabledAt: true,
+      },
+    });
+
+    return topPartnersData.map((item) => {
+      const partner = partners.find((p) => p.id === item.partnerId);
+      return {
+        ...item,
+        partner,
+      };
+    });
   }
 
   // Return array for other endpoints

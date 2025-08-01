@@ -16,7 +16,10 @@ function SheetRoot({
   return (
     <RootComponent direction="right" handleOnly {...rest}>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-black/20" />
+        <Drawer.Overlay
+          className="fixed inset-0 bg-black/20"
+          data-sheet-overlay
+        />
         <Drawer.Content
           {...contentProps}
           onPointerDownOutside={(e) => {
@@ -54,7 +57,7 @@ function SheetRoot({
 function Title({ className, ...rest }: ComponentProps<typeof Drawer.Title>) {
   return (
     <Drawer.Title
-      className={cn("text-xl font-medium text-zinc-900", className)}
+      className={cn("text-lg font-semibold text-neutral-900", className)}
       {...rest}
     />
   );

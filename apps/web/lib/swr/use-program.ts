@@ -1,24 +1,37 @@
 import { fetcher } from "@dub/utils";
-import { useParams } from "next/navigation";
-import useSWR from "swr";
+import useSWR, { SWRConfiguration } from "swr";
 import { ProgramProps } from "../types";
 import useWorkspace from "./use-workspace";
 
-export default function useProgram() {
-  const { id: workspaceId } = useWorkspace();
-  const { programId } = useParams();
+export default function useProgram<T = ProgramProps>(
+  {
+    query,
+  }: {
+    query?: Record<string, any>;
+  } = {},
+  options?: SWRConfiguration,
+) {
+  const { id: workspaceId, defaultProgramId } = useWorkspace();
 
-  const { data: program, error } = useSWR<ProgramProps>(
-    `/api/programs/${programId}?workspaceId=${workspaceId}`,
+  const {
+    data: program,
+    error,
+    mutate,
+  } = useSWR<T>(
+    workspaceId &&
+      defaultProgramId &&
+      `/api/programs/${defaultProgramId}?${new URLSearchParams({ workspaceId, ...query }).toString()}`,
     fetcher,
     {
       dedupingInterval: 60000,
+      ...options,
     },
   );
 
   return {
     program,
     error,
-    loading: programId && !program && !error ? true : false,
+    mutate,
+    loading: !program && !error ? true : false,
   };
 }

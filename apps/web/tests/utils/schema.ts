@@ -5,6 +5,7 @@ import { expect } from "vitest";
 
 export const LinkSchema = LinkSchemaOld.extend({
   identifier: z.null(),
+  linkRetentionCleanupDisabledAt: z.null(),
 });
 
 export const expectedLink: Partial<Link> & {
@@ -55,6 +56,10 @@ export const expectedLink: Partial<Link> & {
   programId: null,
   partnerId: null,
   folderId: null,
+  testCompletedAt: null,
+  testStartedAt: null,
+  testVariants: null,
+  linkRetentionCleanupDisabledAt: null,
 };
 
 export const expectedTag: Partial<Tag> = {
@@ -78,8 +83,7 @@ export const expectedWorkspace: Partial<Project> = {
   usageLimit: expect.any(Number),
   linksUsage: expect.any(Number),
   linksLimit: expect.any(Number),
-  salesUsage: expect.any(Number),
-  salesLimit: expect.any(Number),
+  payoutsLimit: expect.any(Number),
   domainsLimit: expect.any(Number),
   tagsLimit: expect.any(Number),
   usersLimit: expect.any(Number),

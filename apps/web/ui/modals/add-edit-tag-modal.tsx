@@ -11,6 +11,7 @@ import {
   RadioGroup,
   RadioGroupItem,
   TooltipContent,
+  useKeyboardShortcut,
   useMediaQuery,
 } from "@dub/ui";
 import { capitalize, cn, pluralize } from "@dub/utils";
@@ -163,7 +164,7 @@ function AddEditTagModal({
             <p className="block text-sm font-medium text-neutral-700">
               Tag Color
             </p>
-            <InfoTooltip content={`A color to make your tag stand out.`} />
+            <InfoTooltip content="A color to make your tag stand out." />
           </label>
           <RadioGroup
             defaultValue={color}
@@ -213,11 +214,16 @@ function AddTagButton({
   const { tags } = useTags();
   const exceededTags = tags && tagsLimit && tags.length >= tagsLimit;
 
+  useKeyboardShortcut("c", () => setShowAddEditTagModal(true), {
+    enabled: !exceededTags,
+  });
+
   return (
     <div>
       <Button
         variant="primary"
         text="Create tag"
+        shortcut="C"
         className="h-9 rounded-lg"
         disabledTooltip={
           exceededTags ? (

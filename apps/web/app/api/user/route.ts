@@ -2,11 +2,19 @@ import { DubApiError } from "@/lib/api/errors";
 import { hashToken, withSession } from "@/lib/auth";
 import { storage } from "@/lib/storage";
 import { ratelimit, redis } from "@/lib/upstash";
+import { uploadedImageSchema } from "@/lib/zod/schemas/misc";
 import { sendEmail } from "@dub/email";
 import { unsubscribe } from "@dub/email/resend/unsubscribe";
 import ConfirmEmailChange from "@dub/email/templates/confirm-email-change";
 import { prisma } from "@dub/prisma";
-import { APP_DOMAIN, R2_URL, nanoid, trim } from "@dub/utils";
+import {
+  APP_DOMAIN,
+  APP_HOSTNAMES,
+  PARTNERS_DOMAIN,
+  R2_URL,
+  nanoid,
+  trim,
+} from "@dub/utils";
 import { waitUntil } from "@vercel/functions";
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
@@ -15,7 +23,7 @@ import { z } from "zod";
 const updateUserSchema = z.object({
   name: z.preprocess(trim, z.string().min(1).max(64)).optional(),
   email: z.preprocess(trim, z.string().email()).optional(),
-  image: z.string().url().optional(),
+  image: uploadedImageSchema.nullish(),
   source: z.preprocess(trim, z.string().min(1).max(32)).optional(),
   defaultWorkspace: z.preprocess(trim, z.string().min(1)).optional(),
 });
@@ -36,7 +44,6 @@ export const GET = withSession(async ({ session }) => {
         source: true,
         defaultWorkspace: true,
         defaultPartnerId: true,
-        dubPartnerId: true,
         passwordHash: true,
         createdAt: true,
       },
@@ -140,6 +147,11 @@ export const PATCH = withSession(async ({ req, session }) => {
       },
     );
 
+    const hostName = req.headers.get("host") || "";
+    const confirmUrl = APP_HOSTNAMES.has(hostName)
+      ? `${APP_DOMAIN}/auth/confirm-email-change/${token}`
+      : `${PARTNERS_DOMAIN}/auth/confirm-email-change/${token}`;
+
     waitUntil(
       sendEmail({
         subject: "Confirm your email address change",
@@ -147,7 +159,7 @@ export const PATCH = withSession(async ({ req, session }) => {
         react: ConfirmEmailChange({
           email: session.user.email,
           newEmail: email,
-          confirmUrl: `${APP_DOMAIN}/auth/confirm-email-change/${token}`,
+          confirmUrl,
         }),
       }),
     );

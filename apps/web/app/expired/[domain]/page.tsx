@@ -68,12 +68,12 @@ export default async function ExpiredLinkPage({
               "animate-slide-up-fade motion-reduce:animate-fade-in [--offset:5px] [animation-delay:300ms] [animation-duration:1s] [animation-fill-mode:both]",
             )}
           >
-            <ButtonLink variant="primary" href="https://d.to/register">
+            <ButtonLink variant="primary" href="https://app.dub.co/register">
               Try Dub today
             </ButtonLink>
             <ButtonLink
               variant="secondary"
-              href={createHref("/home", params.domain, {
+              href={createHref("/links", params.domain, {
                 ...UTM_PARAMS,
                 utm_campaign: params.domain,
                 utm_content: "Learn more",

@@ -3,11 +3,11 @@ import {
   webhookPayloadSchema,
 } from "@/lib/webhook/schemas";
 import { Webhook } from "@dub/prisma/client";
-import { nanoid, toCamelCase } from "@dub/utils";
+import { OG_AVATAR_URL, nanoid, toCamelCase } from "@dub/utils";
 import { ExpandedLink, transformLink } from "../api/links/utils/transform-link";
-import { WebhookTrigger } from "../types";
-import z from "../zod";
-import { clickEventSchema, clickEventSchemaTB } from "../zod/schemas/clicks";
+import { generateRandomName } from "../names";
+import { ClickEventTB, WebhookTrigger } from "../types";
+import { clickEventSchema } from "../zod/schemas/clicks";
 import { WebhookSchema } from "../zod/schemas/webhooks";
 import { WEBHOOK_EVENT_ID_PREFIX } from "./constants";
 import { leadWebhookEventSchema, saleWebhookEventSchema } from "./schemas";
@@ -29,7 +29,7 @@ export const transformWebhook = (webhook: TransformWebhookProps) => {
 };
 
 export const transformClickEventData = (
-  data: z.infer<typeof clickEventSchemaTB> & {
+  data: ClickEventTB & {
     link: any;
   },
 ) => {
@@ -47,6 +47,16 @@ export const transformClickEventData = (
   });
 };
 
+const transformWebhookCustomer = (customer: any) => {
+  return {
+    ...customer,
+    name: customer.name || customer.email || generateRandomName(),
+    externalId: customer.externalId || "",
+    country: undefined,
+    avatar: customer.avatar || `${OG_AVATAR_URL}${customer.id}`,
+  };
+};
+
 export const transformLeadEventData = (data: any) => {
   const lead = Object.fromEntries(
     Object.entries(data).map(([key, value]) => [toCamelCase(key), value]),
@@ -56,13 +66,7 @@ export const transformLeadEventData = (data: any) => {
 
   return leadWebhookEventSchema.parse({
     ...lead,
-    customer: {
-      ...customer,
-      country: undefined,
-      avatar:
-        customer.avatar ||
-        `https://api.dicebear.com/9.x/micah/svg?seed=${customer.id}`,
-    },
+    customer: transformWebhookCustomer(customer),
     click: {
       ...lead,
       id: lead.clickId,
@@ -82,13 +86,7 @@ export const transformSaleEventData = (data: any) => {
 
   return saleWebhookEventSchema.parse({
     ...sale,
-    customer: {
-      ...customer,
-      country: undefined,
-      avatar:
-        customer.avatar ||
-        `https://api.dicebear.com/9.x/micah/svg?seed=${customer.id}`,
-    },
+    customer: transformWebhookCustomer(customer),
     sale: {
       amount: sale.amount,
       currency: sale.currency,

@@ -3,15 +3,17 @@ import {
   analyticsQuerySchema,
   eventsQuerySchema,
 } from "../zod/schemas/analytics";
+import { analyticsResponse } from "../zod/schemas/analytics-response";
+import { getPartnerEarningsTimeseriesSchema } from "../zod/schemas/partner-profile";
 import {
   ANALYTICS_SALE_UNIT,
   ANALYTICS_VIEWS,
+  DATE_RANGE_INTERVAL_PRESETS,
   EVENT_TYPES,
   VALID_ANALYTICS_ENDPOINTS,
-  intervals,
 } from "./constants";
 
-export type IntervalOptions = (typeof intervals)[number];
+export type IntervalOptions = (typeof DATE_RANGE_INTERVAL_PRESETS)[number];
 
 export type AnalyticsGroupByOptions =
   (typeof VALID_ANALYTICS_ENDPOINTS)[number];
@@ -21,6 +23,10 @@ export type AnalyticsResponseOptions =
   | "leads"
   | "sales"
   | "saleAmount";
+
+export type AnalyticsResponse = {
+  [K in keyof typeof analyticsResponse]: z.infer<(typeof analyticsResponse)[K]>;
+};
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -34,6 +40,8 @@ export type AnalyticsFilters = z.infer<typeof analyticsQuerySchema> & {
   dataAvailableFrom?: Date;
   isDemo?: boolean;
   isDeprecatedClicksEndpoint?: boolean;
+  folderIds?: string[];
+  isMegaFolder?: boolean;
 };
 
 export type EventsFilters = z.infer<typeof eventsQuerySchema> & {
@@ -41,6 +49,8 @@ export type EventsFilters = z.infer<typeof eventsQuerySchema> & {
   dataAvailableFrom?: Date;
   isDemo?: boolean;
   customerId?: string;
+  folderIds?: string[];
+  isMegaFolder?: boolean;
 };
 
 const partnerAnalyticsSchema = analyticsQuerySchema
@@ -50,10 +60,14 @@ const partnerAnalyticsSchema = analyticsQuerySchema
     start: true,
     end: true,
     groupBy: true,
+    linkId: true,
   })
   .partial();
 
 export type PartnerAnalyticsFilters = z.infer<typeof partnerAnalyticsSchema>;
+export type PartnerEarningsTimeseriesFilters = z.infer<
+  typeof getPartnerEarningsTimeseriesSchema
+>;
 
 const partnerEventsSchema = eventsQuerySchema
   .pick({

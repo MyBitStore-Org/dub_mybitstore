@@ -1,13 +1,11 @@
 import { includeTags } from "@/lib/api/links/include-tags";
 import { notifyPartnerSale } from "@/lib/api/partners/notify-partner-sale";
-import { calculateSaleEarnings } from "@/lib/api/sales/calculate-earnings";
-import { createId } from "@/lib/api/utils";
+import { createPartnerCommission } from "@/lib/partners/create-partner-commission";
 import { recordSale } from "@/lib/tinybird";
+import { LeadEventTB } from "@/lib/types";
 import { redis } from "@/lib/upstash";
 import { sendWorkspaceWebhook } from "@/lib/webhook/publish";
 import { transformSaleEventData } from "@/lib/webhook/transform";
-import z from "@/lib/zod";
-import { leadEventSchemaTB } from "@/lib/zod/schemas/leads";
 import { prisma } from "@dub/prisma";
 import { nanoid } from "@dub/utils";
 import { waitUntil } from "@vercel/functions";
@@ -22,7 +20,7 @@ export async function createShopifySale({
   event: any;
   customerId: string;
   workspaceId: string;
-  leadData: z.infer<typeof leadEventSchemaTB>;
+  leadData: LeadEventTB;
 }) {
   const order = orderSchema.parse(event);
 
@@ -32,7 +30,7 @@ export async function createShopifySale({
     current_subtotal_price_set: { shop_money: shopMoney },
   } = order;
 
-  const amount = Number(shopMoney.amount) * 100;
+  const amount = Math.round(Number(shopMoney.amount) * 100); // round to nearest cent
   const { link_id: linkId } = leadData;
   const currency = shopMoney.currency_code.toLowerCase();
 
@@ -92,15 +90,20 @@ export async function createShopifySale({
         usage: {
           increment: 1,
         },
-        salesUsage: {
-          increment: amount,
-        },
       },
     }),
 
-    prisma.customer.findUniqueOrThrow({
+    prisma.customer.update({
       where: {
         id: customerId,
+      },
+      data: {
+        sales: {
+          increment: 1,
+        },
+        saleAmount: {
+          increment: amount,
+        },
       },
     }),
 
@@ -121,60 +124,32 @@ export async function createShopifySale({
   );
 
   // for program links
-  // TODO: check if link.partnerId as well, so we can just do findUnique partnerId_programId
-  if (link.programId) {
-    const { program, ...partner } =
-      await prisma.programEnrollment.findFirstOrThrow({
-        where: {
-          links: {
-            some: {
-              id: linkId,
-            },
-          },
+  if (link.programId && link.partnerId) {
+    const commission = await createPartnerCommission({
+      event: "sale",
+      programId: link.programId,
+      partnerId: link.partnerId,
+      linkId: link.id,
+      eventId: saleData.event_id,
+      customerId: customer.id,
+      amount: saleData.amount,
+      quantity: 1,
+      invoiceId: saleData.invoice_id,
+      currency: saleData.currency,
+      context: {
+        customer: {
+          country: customer.country,
         },
-        select: {
-          program: true,
-          partnerId: true,
-          commissionAmount: true,
-        },
-      });
-
-    const saleEarnings = calculateSaleEarnings({
-      program,
-      partner,
-      sales: 1,
-      saleAmount: amount,
-    });
-
-    await prisma.commission.create({
-      data: {
-        id: createId({ prefix: "cm_" }),
-        programId: program.id,
-        linkId: link.id,
-        partnerId: partner.partnerId,
-        eventId: saleData.event_id,
-        customerId: customer.id,
-        quantity: 1,
-        type: "sale",
-        amount,
-        earnings: saleEarnings,
-        invoiceId,
-        currency,
       },
     });
 
-    waitUntil(
-      notifyPartnerSale({
-        partner: {
-          id: partner.partnerId,
-          referralLink: link.shortLink,
-        },
-        program,
-        sale: {
-          amount,
-          earnings: saleEarnings,
-        },
-      }),
-    );
+    if (commission) {
+      waitUntil(
+        notifyPartnerSale({
+          link,
+          commission,
+        }),
+      );
+    }
   }
 }

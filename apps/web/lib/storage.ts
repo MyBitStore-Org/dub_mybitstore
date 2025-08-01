@@ -1,10 +1,11 @@
-import { R2_URL, fetchWithTimeout } from "@dub/utils";
+import { OG_AVATAR_URL, R2_URL, fetchWithTimeout } from "@dub/utils";
 import { AwsClient } from "aws4fetch";
 
 interface imageOptions {
   contentType?: string;
   width?: number;
   height?: number;
+  headers?: Record<string, string>;
 }
 
 class StorageClient {
@@ -35,6 +36,7 @@ class StorageClient {
 
     const headers = {
       "Content-Length": uploadBody.size.toString(),
+      ...opts?.headers,
     };
     if (opts?.contentType) headers["Content-Type"] = opts.contentType;
 
@@ -149,5 +151,9 @@ class StorageClient {
 export const storage = new StorageClient();
 
 export const isStored = (url: string) => {
-  return url.startsWith(R2_URL);
+  return url.startsWith(R2_URL) || url.startsWith(OG_AVATAR_URL);
+};
+
+export const isNotHostedImage = (imageString: string) => {
+  return !imageString.startsWith("https://");
 };
